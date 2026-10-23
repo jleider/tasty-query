@@ -566,6 +566,13 @@ object Symbols {
     /** Is this symbol `inline`? */
     final def isInline: Boolean = flags.is(Inline)
 
+    /** Is this symbol `erased`?
+      *
+      * This reflects dotc's `Erased` flag, which it sets on terms declared `erased`, on terms whose type extends
+      * `scala.compiletime.Erased`, and on the evidence parameter of a `: Singleton` context bound.
+      */
+    final def isErased: Boolean = flags.is(Erased)
+
     /** Is this symbol `transparent inline`? */
     final def isTransparentInline: Boolean = flags.isAllOf(Inline | Transparent)
 
@@ -1476,12 +1483,31 @@ object Symbols {
         case _ =>
           false
 
+      /* dotc pickles a reference to a member through a prefix with the signature of the member *as seen from that
+       * prefix* (see `NamedType.signature`), and resolves it with `atSignature(sig, site = prefix)`. For example,
+       * `def f(x: T): T` inherited with `T := String` is referenced as `f[with sig (java.lang.String):java.lang.String]`.
+       * We only get there when no declared signature matches.
+       */
+      def lookupAsSeenFromPrefix(name: SignedName): Option[TermOrTypeSymbol] =
+        linearization.iterator.flatMap { cls =>
+          cls.getAllOverloadedDecls(name.underlying).find { decl =>
+            !decl.isPrivate && decl.needsSignature && decl.targetName == name.target
+            && Signature.fromType(decl.typeAsSeenFrom(pre), decl.sourceLanguage, optCtorReturn = None) == name.sig
+          }
+        }.nextOption()
+      end lookupAsSeenFromPrefix
+
       getDecl(name) match
         case some @ Some(sym) if !sym.isPrivateParamAccessor || isOwnThis || isAnyValEqualsWorkaround(sym) =>
           some
         case _ =>
-          if name == nme.Constructor then None
-          else lookup(linearization.tail)
+          name match
+            case nme.Constructor =>
+              None
+            case name: SignedName if name.underlying != nme.Constructor =>
+              lookup(linearization.tail).orElse(lookupAsSeenFromPrefix(name))
+            case _ =>
+              lookup(linearization.tail)
     end findMember
 
     private[tastyquery] def resolveMember(name: Name, pre: NonEmptyPrefix)(using Context): ResolveMemberResult =

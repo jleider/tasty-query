@@ -56,6 +56,16 @@ private[tastyquery] object Erasure:
 
   private type PreErasedTypeRef = ErasedTypeRef | ErasedValueClass
 
+  /** Can a result of type `tp` still erase to `void`, if its underlying type does?
+    *
+    * dotc erases a result to `void` only if its type `isRef(defn.UnitClass)`, which looks through type aliases as seen
+    * from their prefix (including opaque type aliases seen from inside their scope), but not through abstract types,
+    * type parameters or singleton types, even when they are bounded by `Unit`. Those erase to
+    * `scala.runtime.BoxedUnit` instead.
+    */
+  private def keepsUnitThrough(tp: TypeRef)(using Context): Boolean =
+    tp.optAliasedType.isDefined
+
   /** First pass of erasure, where where value classes become `ErasedValueClass`es. */
   private def preErase(tpe: Type, keepUnit: Boolean)(using Context, SourceLanguage): PreErasedTypeRef =
     def arrayOf(tpe: TypeOrWildcard): ErasedTypeRef =
@@ -74,6 +84,10 @@ private[tastyquery] object Erasure:
               arrayOf(targ)
             else if cls.isDerivedValueClass then preErasePolyValueClass(cls, tpe.args)
             else cls.erasure
+          case tycon: TypeRef =>
+            preErase(tpe.translucentSuperType, keepUnit && keepsUnitThrough(tycon))
+          case _: TypeParamRef =>
+            preErase(tpe.translucentSuperType, keepUnit = false)
           case _ =>
             preErase(tpe.translucentSuperType, keepUnit)
       case TypeRef.OfClass(cls) =>
@@ -81,11 +95,11 @@ private[tastyquery] object Erasure:
         else if cls.isDerivedValueClass then preEraseMonoValueClass(cls)
         else cls.erasure
       case tpe: TypeRef =>
-        preErase(tpe.translucentSuperType, keepUnit)
+        preErase(tpe.translucentSuperType, keepUnit && keepsUnitThrough(tpe))
       case tpe: SingletonType =>
-        preErase(tpe.underlying, keepUnit)
+        preErase(tpe.underlying, keepUnit = false)
       case tpe: TypeParamRef =>
-        preErase(tpe.bounds.high, keepUnit)
+        preErase(tpe.bounds.high, keepUnit = false)
       case tpe: MatchType =>
         tpe.reduced match
           case Some(reduced) => preErase(reduced, keepUnit)

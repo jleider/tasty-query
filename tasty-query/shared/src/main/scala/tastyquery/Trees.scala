@@ -214,12 +214,16 @@ object Trees {
   type ParamsClause = Either[List[ValDef], List[TypeParam]]
 
   private[tastyquery] object ParamsClause:
-    def makeDefDefType(paramLists: List[ParamsClause], resultTpt: TypeTree): TypeOrMethodic =
+    def makeDefDefType(
+      paramLists: List[ParamsClause],
+      resultTpt: TypeTree,
+      scalaAnnotationInternalPackage: PackageSymbol
+    ): TypeOrMethodic =
       def rec(paramLists: List[ParamsClause]): TypeOrMethodic =
         paramLists match
           case Left(params) :: rest =>
             val paramSymbols = params.map(_.symbol)
-            MethodType.fromSymbols(paramSymbols, rec(rest))
+            MethodType.fromSymbols(paramSymbols, rec(rest), scalaAnnotationInternalPackage)
           case Right(tparams) :: rest =>
             PolyType.fromParams(tparams, rec(rest))
           case Nil =>
@@ -532,6 +536,10 @@ object Trees {
 
     private def convertMethodTypeToFunctionType(tpe: TermType)(using Context): Type =
       tpe match
+        case tpe: MethodType if tpe.paramTypes.exists(MethodType.isErasedParamType(_)) =>
+          // Like dotc, the type of a lambda with erased parameters is a refinement of PolyFunction
+          TermRefinement(polyFunctionType, isStable = false, nme.m_apply, tpe)
+
         case tpe: MethodType if tpe.resultType.isInstanceOf[Type] =>
           val paramCount = tpe.paramNames.size
           val functionNTypeRef = defn.FunctionNClass(paramCount).staticRef
@@ -542,16 +550,20 @@ object Trees {
           else functionNTypeRef.appliedTo(tpe.paramTypes :+ tpe.resultType.asInstanceOf[Type])
 
         case tpe: PolyType if tpe.resultType.isInstanceOf[MethodType] =>
-          val polyFunctionClass = defn.PolyFunctionClass.getOrElse {
-            throw InvalidProgramStructureException(
-              s"Found a polymorphic Lambda but PolyFunction is not on the classpath"
-            )
-          }
-          TermRefinement(polyFunctionClass.staticRef, isStable = false, nme.m_apply, tpe)
+          TermRefinement(polyFunctionType, isStable = false, nme.m_apply, tpe)
 
         case _ =>
           throw InvalidProgramStructureException(s"Unexpected type for the `meth` part of a Lambda: ${tpe.showBasic}")
     end convertMethodTypeToFunctionType
+
+    private def polyFunctionType(using Context): TypeRef =
+      val polyFunctionClass = defn.PolyFunctionClass.getOrElse {
+        throw InvalidProgramStructureException(
+          s"Found a Lambda of a PolyFunction type but PolyFunction is not on the classpath"
+        )
+      }
+      polyFunctionClass.staticRef
+    end polyFunctionType
 
     /** The class symbol of the SAM type of this lambda.
       *
@@ -873,8 +885,8 @@ object Trees {
           case ValDef(name, tpt, _, _) =>
             TermRefinement(parent, isStable = true, name, tpt.toType)
 
-          case DefDef(name, paramClauses, resultType, _, _) =>
-            TermRefinement(parent, isStable = false, name, ParamsClause.makeDefDefType(paramClauses, resultType))
+          case DefDef(name, _, _, _, symbol) =>
+            TermRefinement(parent, isStable = false, name, symbol.declaredType)
       }
 
       if refined eq base then base

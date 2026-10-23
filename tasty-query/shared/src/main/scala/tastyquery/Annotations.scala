@@ -73,11 +73,22 @@ object Annotations:
       * Otherwise, returns `None`.
       */
     private[tastyquery] def syntacticExtractInternalRepeatedAnnot: Option[PackageRef] =
+      syntacticExtractInternalAnnot(tpnme.internalRepeatedAnnot)
+
+    /** Is this the internal `@ErasedParam` annotation, with which dotc marks the types of erased parameters in method
+      * types?
+      *
+      * Like `syntacticExtractInternalRepeatedAnnot`, this does not resolve anything.
+      */
+    private[tastyquery] def syntacticIsInternalErasedParamAnnot: Boolean =
+      syntacticExtractInternalAnnot(tpnme.internalErasedParamAnnot).isDefined
+
+    private def syntacticExtractInternalAnnot(name: TypeName): Option[PackageRef] =
       val tpt = findNewAnnotTypeTree(tree)
       tpt match
         // It is compiler-synthetic by definition, so it can only be a TypeWrapper
         case TypeWrapper(tpe: TypeRef) =>
-          if tpe.name != tpnme.internalRepeatedAnnot then None
+          if tpe.name != name then None
           else
             tpe.prefix match
               case pkg: PackageRef =>
@@ -87,7 +98,7 @@ object Annotations:
                 None
         case _ =>
           None
-    end syntacticExtractInternalRepeatedAnnot
+    end syntacticExtractInternalAnnot
 
     override def toString(): String = s"Annotation($tree)"
   end Annotation
@@ -96,6 +107,18 @@ object Annotations:
     /** Constructs an annotation with the given underlying tree. */
     def apply(tree: TermTree): Annotation =
       new Annotation(tree)
+
+    /** The internal `@ErasedParam` annotation, with which dotc marks the types of erased parameters in method types. */
+    private[tastyquery] def internalErasedParam(scalaAnnotationInternalPackage: PackageSymbol): Annotation =
+      val pos = SourcePosition.NoPosition
+      val typeRef = TypeRef(scalaAnnotationInternalPackage.packageRef, tpnme.internalErasedParamAnnot)
+      val className = SignatureName(
+        scalaAnnotationInternalPackage.fullName.path :+ tpnme.internalErasedParamAnnot.toTermName
+      )
+      val ctorName = SignedName(nme.Constructor, Signatures.Signature(Nil, className), nme.Constructor)
+      val tree = Apply(Select(New(TypeWrapper(typeRef)(pos))(pos), ctorName)(None)(pos), Nil)(pos)
+      Annotation(tree)
+    end internalErasedParam
 
     /** Constructs an annotation with the no-arg constructor of the given class.
       *

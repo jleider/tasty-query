@@ -1204,6 +1204,36 @@ class TypeSuite extends UnrestrictedUnpicklingSuite {
     assert(clue(body.tpe).isRef(defn.IntClass))
   }
 
+  testWithContext("signed-name-as-seen-from-prefix") {
+    val BaseClass = ctx.findTopLevelClass("simple_trees.SignatureAsSeenFromPrefixBase")
+    val ObjectClass = ctx.findTopLevelModuleClass("simple_trees.SignatureAsSeenFromPrefixObject")
+    val CompanionClass = ctx.findTopLevelClass("simple_trees.SignatureAsSeenFromPrefixCompanion")
+    val UserClass = ctx.findTopLevelClass("simple_trees.SignatureAsSeenFromPrefixUser")
+
+    val bounded = BaseClass.findNonOverloadedDecl(name"bounded")
+    val overloads = BaseClass.findAllOverloadedDecls(name"overloaded")
+    val overloadedT = overloads.find(_.signature.paramsSig.sizeIs == 1).get
+    val overloadedAny = overloads.find(_.signature.paramsSig.sizeIs == 2).get
+    val inst = CompanionClass.findNonOverloadedDecl(name"inst")
+
+    def findIdent(cls: ClassSymbol, methodName: String, identName: SimpleName): Ident =
+      val Some(DefDef(_, _, _, Some(body), _)) = cls.findNonOverloadedDecl(termName(methodName)).tree: @unchecked
+      findTree(body) { case ident @ Ident(`identName`) => ident }
+
+    def testIdent(cls: ClassSymbol, methodName: String, identName: SimpleName, expected: TermSymbol): Unit =
+      val ident = findIdent(cls, methodName, identName)
+      // dotc pickles the signature as seen from the prefix, which is not the declared one
+      (ident.referenceType: @unchecked) match
+        case ref: TermRef => assert(clue(ref.name) != clue(expected.signedName))
+      assert(clue(ident.symbol) == clue(expected))
+    end testIdent
+
+    testIdent(ObjectClass, "callBounded", name"bounded", bounded)
+    testIdent(ObjectClass, "callOverloadedT", name"overloaded", overloadedT)
+    testIdent(ObjectClass, "callOverloadedAny", name"overloaded", overloadedAny)
+    testIdent(UserClass, "callNeedsShow", name"inst", inst)
+  }
+
   testWithContext("poly-new") {
     val GenericClass = ctx.findTopLevelClass("simple_trees.GenericClass")
     val GenericModuleClass = ctx.findTopLevelModuleClass("simple_trees.GenericClass")

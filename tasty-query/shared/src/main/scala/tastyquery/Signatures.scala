@@ -54,7 +54,10 @@ object Signatures:
       def rec(info: TypeOrMethodic, acc: List[ParamSig]): Signature =
         info match {
           case info: MethodType =>
-            val paramSigs = info.paramTypes.map(tpe => ParamSig.Term(sigName(tpe, language, keepUnit = false)))
+            // Like dotc, leave out erased parameters, whose types are annotated with `@ErasedParam`
+            val paramSigs = info.paramTypes.collect {
+              case tpe if !MethodType.isErasedParamType(tpe) => ParamSig.Term(sigName(tpe, language, keepUnit = false))
+            }
             rec(info.resultType, acc ::: paramSigs)
           case info: PolyType =>
             val typeLenSig = ParamSig.TypeLen(info.paramTypeBounds.length)
