@@ -227,11 +227,43 @@ private[tastyquery] object TypeMatching:
         case _           => false
       })
 
+    def isNothing(tp: Type): Boolean =
+      tp.isExactlyNothing || tp.isInstanceOf[NothingType]
+
+    def isClassRef(tp: Type): Boolean = tp match
+      case TypeRef.OfClass(_) => true
+      case _                  => false
+
+    /* Is `tp` a possibly applied class type, or a singleton type? Other type proxies are seen through to their upper
+     * bound before decomposing a union or intersection on the other side, like dotc does by first mapping both sides
+     * to their "disjointness boundary".
+     */
+    def isDisjointnessBoundary(tp: TypeProxy): Boolean = tp match
+      case tp: AppliedType  => isClassRef(tp.tycon)
+      case _: SingletonType => true
+      case _                => isClassRef(tp)
+
     (tp1.dealias, tp2.dealias) match
       case _ if tp1.isFromJavaObject =>
         provablyDisjoint(defn.AnyType, tp2)
       case _ if tp2.isFromJavaObject =>
         provablyDisjoint(tp1, defn.AnyType)
+
+      // Property 5
+      case (tp1, tp2) if isNothing(tp1) || isNothing(tp2) =>
+        true
+
+      // Unions and intersections, in the same order as dotc's rules
+      case (tp1, tp2: OrType) =>
+        provablyDisjoint(tp1, tp2.first) && provablyDisjoint(tp1, tp2.second)
+      case (tp1, tp2: AndType) =>
+        provablyDisjoint(tp1, tp2.first) || provablyDisjoint(tp1, tp2.second)
+      case (tp1: (OrType | AndType), tp2: TypeProxy) if !isDisjointnessBoundary(tp2) =>
+        provablyDisjoint(tp1, tp2.superTypeNormalized)
+      case (tp1: OrType, tp2) =>
+        provablyDisjoint(tp1.first, tp2) && provablyDisjoint(tp1.second, tp2)
+      case (tp1: AndType, tp2) =>
+        provablyDisjoint(tp1.first, tp2) || provablyDisjoint(tp1.second, tp2)
 
       case (tp1: ConstantType, tp2: ConstantType) =>
         // Property 3
@@ -294,9 +326,10 @@ private[tastyquery] object TypeMatching:
 
       case (tp1: TermRef, tp2: TermRef) if isEnumValueOrModule(tp1) && isEnumValueOrModule(tp2) =>
         tp1.symbol != tp2.symbol
-      case (tp1: TermRef, tp2: TypeRef) if isEnumValue(tp1) =>
+      // An enum value is disjoint from a class it does not derive from; an abstract type is seen through below
+      case (tp1: TermRef, tp2: TypeRef) if isEnumValue(tp1) && isClassRef(tp2) =>
         !tp1.isSubType(tp2)
-      case (tp1: TypeRef, tp2: TermRef) if isEnumValue(tp2) =>
+      case (tp1: TypeRef, tp2: TermRef) if isEnumValue(tp2) && isClassRef(tp1) =>
         !tp2.isSubType(tp1)
 
       case (tp1: TypeProxy, tp2: TypeProxy) =>
@@ -307,9 +340,9 @@ private[tastyquery] object TypeMatching:
           case TypeRef.OfClass(_) => false
           case _                  => provablyDisjoint(tp1, tp2.superTypeNormalized)
         trySuperTp1 || trySuperTp2
-      case (tp1: TypeProxy, _) =>
+      case (tp1: TypeProxy, _) if !isClassRef(tp1) =>
         provablyDisjoint(tp1.superTypeNormalized, tp2)
-      case (_, tp2: TypeProxy) =>
+      case (_, tp2: TypeProxy) if !isClassRef(tp2) =>
         provablyDisjoint(tp1, tp2.superTypeNormalized)
 
       case _ =>

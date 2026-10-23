@@ -433,6 +433,43 @@ class SignatureSuite extends UnrestrictedUnpicklingSuite:
     assertSigned(arrayOfBoundReducibleSig, "(1,scala.Int):scala.Some[]")
   }
 
+  testWithContext("match types and disjointness") {
+    val MatchTypeUnions = ctx.findTopLevelClass("simple_trees.MatchTypeUnions")
+
+    val classScrutinee = MatchTypeUnions.findNonOverloadedDecl(termName("classScrutinee"))
+    assertSigned(classScrutinee, "(java.lang.String):scala.Unit")
+
+    val unionScrutinee = MatchTypeUnions.findNonOverloadedDecl(termName("unionScrutinee"))
+    assertSigned(unionScrutinee, "(scala.Int):scala.Unit")
+
+    val intersectionScrutinee = MatchTypeUnions.findNonOverloadedDecl(termName("intersectionScrutinee"))
+    assertSigned(intersectionScrutinee, "(scala.Int):scala.Unit")
+
+    val nothingPattern = MatchTypeUnions.findNonOverloadedDecl(termName("nothingPattern"))
+    assertSigned(nothingPattern, "(java.lang.String):scala.Unit")
+
+    val abstractPattern = MatchTypeUnions.findNonOverloadedDecl(termName("abstractPattern"))
+    assertSigned(abstractPattern, "(java.lang.String):scala.Unit")
+
+    // Stuck, so their parameter types erase to the bound, `Any`
+    val enumMethods =
+      for methodName <- List("enumScrutinee", "enumScrutineeUnionPattern", "enumPattern") yield
+        val method = MatchTypeUnions.findNonOverloadedDecl(termName(methodName))
+        assertSigned(method, "(java.lang.Object):scala.Unit")
+        method
+
+    // The call sites refer to the methods with the signatures dotc computed
+    val callsBody = MatchTypeUnions.findNonOverloadedDecl(termName("calls")).tree.get.asInstanceOf[DefDef].rhs.get
+    val methods = List(classScrutinee, unionScrutinee, intersectionScrutinee, nothingPattern, abstractPattern)
+    for method <- methods ::: enumMethods do
+      val select = findTree(callsBody) {
+        case select @ Select(_, SignedName(underlying, _, _)) if underlying == method.name => select
+      }
+      (select.name: @unchecked) match
+        case SignedName(_, sig, _) => assert(clue(sig) == clue(method.signature))
+      assert(clue(select.symbol) == clue(method))
+  }
+
   testWithContext("tuples") {
     val TuplesClass = ctx.findTopLevelClass("simple_trees.Tuples")
 
