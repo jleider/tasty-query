@@ -192,6 +192,42 @@ class SignatureSuite extends UnrestrictedUnpicklingSuite:
     assertSigned(unitParam, "(scala.runtime.BoxedUnit):java.lang.Object")
   }
 
+  testWithContext("unit-erasure-non-alias") {
+    val UnitErasureNonAliasClass = ctx.findTopLevelClass("simple_trees.UnitErasureNonAlias")
+    val UnitErasureOpaqueClass = ctx.findTopLevelModuleClass("simple_trees.UnitErasureOpaque")
+
+    val expectedSignatures = List(
+      "aliasResult" -> "():scala.Unit",
+      "abstractResult" -> "():scala.runtime.BoxedUnit",
+      "typeParamResult" -> "(1,scala.runtime.BoxedUnit):scala.runtime.BoxedUnit",
+      "hkTypeParamResult" -> "(1):scala.runtime.BoxedUnit",
+      "opaqueResult" -> "(1,scala.runtime.BoxedUnit):scala.runtime.BoxedUnit",
+      "singletonResult" -> "(scala.runtime.BoxedUnit):scala.runtime.BoxedUnit",
+      "refinedAliasResult" -> "(simple_trees.UnitErasureHasElem):scala.Unit",
+      "refinedBoundedResult" -> "(simple_trees.UnitErasureHasElem):scala.runtime.BoxedUnit",
+      "exportedAliasResult" -> "():scala.Unit"
+    )
+    val methods =
+      for (methodName, expectedSignature) <- expectedSignatures yield
+        val method = UnitErasureNonAliasClass.findNonOverloadedDecl(termName(methodName))
+        assertSigned(method, expectedSignature)
+        method
+
+    val inside = UnitErasureOpaqueClass.findNonOverloadedDecl(termName("inside"))
+    assertSigned(inside, "(1):scala.Unit")
+
+    // The call sites refer to the methods with the signatures dotc computed
+    val callsBody =
+      UnitErasureNonAliasClass.findNonOverloadedDecl(termName("calls")).tree.get.asInstanceOf[DefDef].rhs.get
+    for method <- inside :: methods do
+      val select = findTree(callsBody) {
+        case select @ Select(_, SignedName(underlying, _, _)) if underlying == method.name => select
+      }
+      (select.name: @unchecked) match
+        case SignedName(_, sig, _) => assert(clue(sig) == clue(method.signature))
+      assert(clue(select.symbol) == clue(method))
+  }
+
   testWithContext("erased-params") {
     val ErasedParamsClass = ctx.findTopLevelClass("simple_trees.ErasedParams")
 
