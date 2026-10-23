@@ -457,6 +457,25 @@ class TypeSuite extends UnrestrictedUnpicklingSuite {
     assert(typed.tpe.isRef(tTypeCaptureSym))
   }
 
+  testWithContext("select-member-of-match-type") {
+    val ResultClass = ctx.findTopLevelClass("simple_trees.MatchTypeMemberResult")
+    val MatchTypeMemberSelectionClass = ctx.findTopLevelClass("simple_trees.MatchTypeMemberSelection")
+
+    val field = ResultClass.findNonOverloadedDecl(name"field")
+
+    for methodName <- List("select", "selectInLambda") do
+      val methodDef = MatchTypeMemberSelectionClass.findNonOverloadedDecl(termName(methodName)).tree.get
+      val select = findTree(methodDef) { case select @ Select(_, SimpleName("field")) => select }
+
+      // The qualifier's type is a match type, which reduces to `MatchTypeMemberResult`
+      val qualifierType = select.qualifier.tpe.widenTermRef.asInstanceOf[Type].dealias
+      assert(clue(qualifierType).isInstanceOf[MatchType])
+
+      assert(clue(select.symbol) == clue(field))
+      assert(clue(select.tpe.widenTermRef).isRef(defn.IntClass))
+    end for
+  }
+
   testWithContext("return") {
     val ReturnPathClass = ctx.findTopLevelClass("simple_trees.Return")
 
