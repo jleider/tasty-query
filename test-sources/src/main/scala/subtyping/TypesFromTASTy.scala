@@ -74,6 +74,23 @@ class TypesFromTASTy:
     case OldStyleEnum.Singleton2.type => String
     case OldStyleEnum.Parametric[t]   => t
 
+  // Reducing these requires proving that a class is disjoint from a union, an intersection, or Nothing
+  type MatchTypeUnionPattern[T] = T match
+    case Int | String => Boolean
+    case _            => Double
+
+  type MatchTypeClassPattern[T] = T match
+    case java.lang.StringBuilder => Boolean
+    case _                       => Double
+
+  type MatchTypeIntersectionPattern[T] = T match
+    case CharSequence & Runnable => Boolean
+    case _                       => Double
+
+  type MatchTypeNothingPattern[T] = T match
+    case Nothing => Boolean
+    case _       => Double
+
   opaque type InstanceOpaque <: AnyVal = Int
 
   val instanceOpaqueVal: InstanceOpaque = 5

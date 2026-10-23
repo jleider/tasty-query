@@ -1405,6 +1405,52 @@ class SubtypingSuite extends UnrestrictedUnpicklingSuite:
     assert(clue(matchTypeLiterals.appliedTo(const(2)).asInstanceOf[MatchType].reduced).isEmpty)
   }
 
+  testWithContext("match-types-with-unions-and-intersections") {
+    val typesFromTasty = new subtyping.TypesFromTASTy
+    import typesFromTasty.*
+
+    val matchTypeUnionPattern = findTypesFromTASTyNamed(typeName("MatchTypeUnionPattern"))
+    val matchTypeClassPattern = findTypesFromTASTyNamed(typeName("MatchTypeClassPattern"))
+    val matchTypeIntersectionPattern = findTypesFromTASTyNamed(typeName("MatchTypeIntersectionPattern"))
+    val matchTypeNothingPattern = findTypesFromTASTyNamed(typeName("MatchTypeNothingPattern"))
+
+    val StringBuilderType = ctx.findTopLevelClass("java.lang.StringBuilder").staticRef
+    val CharSequenceType = ctx.findTopLevelClass("java.lang.CharSequence").staticRef
+    val NumberType = ctx.findTopLevelClass("java.lang.Number").staticRef
+    val SerializableType = ctx.findTopLevelClass("java.io.Serializable").staticRef
+
+    def assertStuck(matchType: Type)(using munit.Location): Unit =
+      assert(clue(matchType.asInstanceOf[MatchType].reduced).isEmpty)
+
+    // A class scrutinee against a union pattern: disjoint only from both members of the union
+    assertEquiv(matchTypeUnionPattern.appliedTo(defn.IntType), defn.BooleanType)
+      .withRef[MatchTypeUnionPattern[Int], Boolean]
+    assertEquiv(matchTypeUnionPattern.appliedTo(StringBuilderType), defn.DoubleType)
+      .withRef[MatchTypeUnionPattern[java.lang.StringBuilder], Double]
+    assertStuck(matchTypeUnionPattern.appliedTo(CharSequenceType)) // CharSequence is not disjoint from String
+    assertNeitherSubtype(matchTypeUnionPattern.appliedTo(CharSequenceType), defn.DoubleType)
+      .withRef[MatchTypeUnionPattern[CharSequence], Double]
+
+    // A union scrutinee against a class pattern: disjoint only if both members of the union are
+    assertEquiv(matchTypeClassPattern.appliedTo(OrType(defn.IntType, defn.StringType)), defn.DoubleType)
+      .withRef[MatchTypeClassPattern[Int | String], Double]
+    assertStuck(matchTypeClassPattern.appliedTo(OrType(defn.IntType, StringBuilderType)))
+    assertNeitherSubtype(matchTypeClassPattern.appliedTo(OrType(defn.IntType, StringBuilderType)), defn.DoubleType)
+      .withRef[MatchTypeClassPattern[Int | java.lang.StringBuilder], Double]
+
+    // An intersection scrutinee against a class pattern: disjoint if one member of the intersection is
+    assertEquiv(matchTypeClassPattern.appliedTo(AndType(defn.StringType, SerializableType)), defn.DoubleType)
+      .withRef[MatchTypeClassPattern[String & java.io.Serializable], Double]
+
+    // A class scrutinee against an intersection pattern: disjoint if it is disjoint from one member of the intersection
+    assertEquiv(matchTypeIntersectionPattern.appliedTo(StringBuilderType), defn.DoubleType)
+      .withRef[MatchTypeIntersectionPattern[java.lang.StringBuilder], Double]
+
+    // Nothing is disjoint from everything
+    assertEquiv(matchTypeNothingPattern.appliedTo(NumberType), defn.DoubleType)
+      .withRef[MatchTypeNothingPattern[Number], Double]
+  }
+
   testWithContext("match-types-with-enums") {
     import subtyping.TypesFromTASTy.MyEnum
 

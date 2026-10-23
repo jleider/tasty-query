@@ -2267,6 +2267,17 @@ object Types {
       TypeMatching.matchCases(scrutinee, cases)
     }
 
+    // The members of a match type are those of its reduction, if it reduces; otherwise those of its bound
+    private[tastyquery] override def resolveMember(name: Name, pre: Type)(using Context): ResolveMemberResult =
+      reduced.getOrElse(bound).resolveMember(name, pre)
+
+    private[tastyquery] override def resolveMatchingMember(
+      name: SignedName,
+      pre: Type,
+      typePredicate: TypeOrMethodic => Boolean
+    )(using Context): ResolveMemberResult =
+      reduced.getOrElse(bound).resolveMatchingMember(name, pre, typePredicate)
+
     override def toString(): String = s"MatchType($bound, $scrutinee, $cases)"
 
     private[tastyquery] def derivedMatchType(bound: Type, scrutinee: Type, cases: List[MatchTypeCase]): MatchType =
