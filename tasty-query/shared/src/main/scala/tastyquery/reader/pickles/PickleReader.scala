@@ -773,7 +773,11 @@ private[pickles] class PickleReader {
     case TempMethodType(paramSyms, resType) =>
       resType match
         case resType: TypeOrMethodic =>
-          MethodType.fromSymbols(paramSyms, translateTempMethodAndPolyForMethod(resType))
+          MethodType.fromSymbols(
+            paramSyms,
+            translateTempMethodAndPolyForMethod(resType),
+            rctx.scalaAnnotationInternalPackage
+          )
         case _ =>
           throw Scala2PickleFormatException(s"Invalid type for method: $tp")
 

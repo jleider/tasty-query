@@ -566,6 +566,13 @@ object Symbols {
     /** Is this symbol `inline`? */
     final def isInline: Boolean = flags.is(Inline)
 
+    /** Is this symbol `erased`?
+      *
+      * This reflects dotc's `Erased` flag, which it sets on terms declared `erased`, on terms whose type extends
+      * `scala.compiletime.Erased`, and on the evidence parameter of a `: Singleton` context bound.
+      */
+    final def isErased: Boolean = flags.is(Erased)
+
     /** Is this symbol `transparent inline`? */
     final def isTransparentInline: Boolean = flags.isAllOf(Inline | Transparent)
 

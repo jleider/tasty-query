@@ -108,6 +108,7 @@ object Names {
     val FromJavaObjectAliasMagic: SimpleTypeName = typeName("<FromJavaObject>")
 
     private[tastyquery] val internalRepeatedAnnot: SimpleTypeName = typeName("Repeated")
+    private[tastyquery] val internalErasedParamAnnot: SimpleTypeName = typeName("ErasedParam")
 
     private[tastyquery] val scala2LocalChild: SimpleTypeName = typeName("<local child>")
     private[tastyquery] val scala2ByName: SimpleTypeName = typeName("<byname>")

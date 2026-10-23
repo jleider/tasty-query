@@ -209,7 +209,8 @@ private[tastyquery] object TypeOps:
         formals2 match
           case formal2 :: rest2 =>
             val formal2a = Substituters.substBinders(formal2, tp2, tp1)
-            val paramsMatch = Subtyping.isSameType(formal2a, formal1)
+            val paramsMatch = MethodType.isErasedParamType(formal1) == MethodType.isErasedParamType(formal2)
+              && Subtyping.isSameType(formal2a, formal1)
             paramsMatch && loop(rest1, rest2)
           case Nil =>
             false

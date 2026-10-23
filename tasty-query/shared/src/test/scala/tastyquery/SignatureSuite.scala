@@ -192,6 +192,91 @@ class SignatureSuite extends UnrestrictedUnpicklingSuite:
     assertSigned(unitParam, "(scala.runtime.BoxedUnit):java.lang.Object")
   }
 
+  testWithContext("erased-params") {
+    val ErasedParamsClass = ctx.findTopLevelClass("simple_trees.ErasedParams")
+
+    val explicitlyErased = ErasedParamsClass.findNonOverloadedDecl(name"explicitlyErased")
+    assertSigned(explicitlyErased, "(scala.Int):scala.Int")
+
+    val erasedByType = ErasedParamsClass.findNonOverloadedDecl(name"erasedByType")
+    assertSigned(erasedByType, "(scala.Int):scala.Int")
+
+    val polyErasedByType = ErasedParamsClass.findNonOverloadedDecl(name"polyErasedByType")
+    assertSigned(polyErasedByType, "(1,java.lang.Object):java.lang.Object")
+
+    val List(Left(List(x)), Left(List(y))) = explicitlyErased.paramSymss: @unchecked
+    assert(!x.isErased)
+    assert(y.isErased)
+
+    val List(Left(List(x2)), Left(List(ev))) = erasedByType.paramSymss: @unchecked
+    assert(!x2.isErased)
+    assert(ev.isErased)
+
+    // Like dotc, the type of an erased parameter is annotated with `@ErasedParam`
+    val xClause = explicitlyErased.declaredType.asInstanceOf[MethodType]
+    val yClause = xClause.resultType.asInstanceOf[MethodType]
+    assert(clue(xClause.paramTypes.head).isInstanceOf[TypeRef])
+    assert(clue(yClause.paramTypes.head).isInstanceOf[AnnotatedType])
+
+    // The annotation can be typed, like the ones dotc pickles
+    val ErasedParamClass = ctx.findTopLevelClass("scala.annotation.internal.ErasedParam")
+    val erasedParamAnnot = yClause.paramTypes.head.asInstanceOf[AnnotatedType].annotation
+    assert(clue(erasedParamAnnot.symbol) == ErasedParamClass)
+    assert(clue(erasedParamAnnot.tree.tpe.asInstanceOf[TypeRef].optSymbol) == Some(ErasedParamClass))
+    assert(clue(erasedParamAnnot.annotConstructor) == ErasedParamClass.findNonOverloadedDecl(nme.Constructor))
+
+    // A function type with an erased parameter erases to the function class of its other parameters
+    val erasedFunction = ErasedParamsClass.findNonOverloadedDecl(name"erasedFunction")
+    assertSigned(erasedFunction, "(scala.Function1):scala.Int")
+
+    // The call sites refer to the methods with the signatures dotc computed
+    val callsBody = ErasedParamsClass.findNonOverloadedDecl(name"calls").tree.get.asInstanceOf[DefDef].rhs.get
+    for method <- List(explicitlyErased, erasedByType, polyErasedByType, erasedFunction) do
+      val select = findTree(callsBody) {
+        case select @ Select(This(_), SignedName(underlying, _, _)) if underlying == method.name => select
+      }
+      (select.name: @unchecked) match
+        case SignedName(_, sig, _) => assert(clue(sig) == clue(method.signature))
+      assert(clue(select.symbol) == clue(method))
+
+    // Like dotc, the type of a lambda with an erased parameter is a refinement of PolyFunction
+    val lambda = findTree(callsBody) { case lambda: Lambda => lambda }
+    (lambda.tpe: @unchecked) match
+      case refinement: TermRefinement =>
+        assert(clue(refinement.parent.asInstanceOf[TypeRef].optSymbol) == defn.PolyFunctionClass)
+        assert(clue(refinement.refinedName) == nme.m_apply)
+
+    // A method with an erased parameter does not match the same method without it
+    val ErasedParamsNotErasedClass = ctx.findTopLevelClass("simple_trees.ErasedParamsNotErased")
+    val notErased = ErasedParamsNotErasedClass.findNonOverloadedDecl(name"explicitlyErased")
+    assert(explicitlyErased.declaredType.matches(explicitlyErased.declaredType))
+    assert(!explicitlyErased.declaredType.matches(notErased.declaredType))
+  }
+
+  testWithContext("erased-params-in-refinements") {
+    val ErasedParamsClass = ctx.findTopLevelClass("simple_trees.ErasedParams")
+    val explicitlyErased = ErasedParamsClass.findNonOverloadedDecl(name"explicitlyErased")
+
+    // In a type tree
+    val refinedSym = ErasedParamsClass.findDecl(tname"Refined").asInstanceOf[TypeMemberSymbol]
+    val refined = refinedSym.typeDef.asInstanceOf[TypeMemberDefinition.TypeAlias].alias.asInstanceOf[TermRefinement]
+    assert(clue(refined.signedName.sig.toString) == "(scala.Int):scala.Int")
+    assert(clue(ErasedParamsClass.staticRef).isSubType(refined))
+
+    val selectOnRefinedBody =
+      ErasedParamsClass.findNonOverloadedDecl(name"selectOnRefined").tree.get.asInstanceOf[DefDef].rhs.get
+    val select = findTree(selectOnRefinedBody) {
+      case select @ Select(_, SignedName(underlying, _, _)) if underlying == explicitlyErased.name => select
+    }
+    assert(clue(select.symbol) == clue(explicitlyErased))
+
+    // In the types section, where dotc pickles the method type with `@ErasedParam`
+    val inferredRefined = ErasedParamsClass.findNonOverloadedDecl(name"inferredRefined")
+    val inferred = inferredRefined.declaredType.asInstanceOf[TermRefinement]
+    assert(clue(inferred.refinedName) == name"refinedOnly")
+    assert(clue(inferred.signedName.sig.toString) == "(scala.Int):scala.Int")
+  }
+
   testWithContext("type-member") {
     val TypeMember = ctx.findTopLevelClass("simple_trees.TypeMember")
 

@@ -791,7 +791,7 @@ private[tasties] class TreeUnpickler private (
         val normalizedParams =
           if name == nme.Constructor then normalizeCtorParamClauses(params)
           else params
-        symbol.setDeclaredType(ParamsClause.makeDefDefType(normalizedParams, tpt))
+        symbol.setDeclaredType(ParamsClause.makeDefDefType(normalizedParams, tpt, rctx.scalaAnnotationInternalPackage))
         symbol.setParamSymss(normalizedParams.map(paramsClauseToParamSymbolsClause(_)))
         definingTree(symbol, DefDef(name, normalizedParams, tpt, rhs, symbol)(spn))
     }

@@ -1765,12 +1765,21 @@ object Types {
   end MethodTypeCompanion
 
   object MethodType extends MethodTypeCompanion("MethodType"):
+    /** Is `tpe` the type of an erased parameter, i.e., is it annotated with `@ErasedParam`? */
+    private[tastyquery] def isErasedParamType(tpe: Type): Boolean = tpe match
+      case tpe: AnnotatedType => tpe.annotation.syntacticIsInternalErasedParamAnnot || isErasedParamType(tpe.typ)
+      case _                  => false
+
     /** Produce method type from parameter symbols, with special mappings for repeated
-      *  and inline parameters:
+      *  and erased parameters:
       *   - replace @repeated annotations on Seq or Array types by RepeatedType's
-      *   - add @inlineParam to inline parameters
+      *   - add @ErasedParam to erased parameters, like dotc, which leaves them out of signatures
       */
-    private[tastyquery] def fromSymbols(params: List[TermSymbol], resultType: TypeOrMethodic): MethodType = {
+    private[tastyquery] def fromSymbols(
+      params: List[TermSymbol],
+      resultType: TypeOrMethodic,
+      scalaAnnotationInternalPackage: PackageSymbol
+    ): MethodType = {
       def annotatedToRepeated(tpe: Type): Type = tpe match
         case tpe: AnnotatedType =>
           tpe.annotation.syntacticExtractInternalRepeatedAnnot match
@@ -1789,12 +1798,12 @@ object Types {
 
       // def translateInline(tp: Type): Type =
       //   AnnotatedType(tp, Annotation(defn.InlineParamAnnot))
-      // def translateErased(tp: Type): Type =
-      //   AnnotatedType(tp, Annotation(defn.ErasedParamAnnot))
+      def translateErased(tp: Type): Type =
+        AnnotatedType(tp, Annotation.internalErasedParam(scalaAnnotationInternalPackage))
       def paramInfo(param: TermSymbol): Type = {
         var paramType = annotatedToRepeated(param.declaredType.requireType)
         // if (param.is(Inline)) paramType = translateInline(paramType)
-        // if (param.is(Erased)) paramType = translateErased(paramType)
+        if param.isErased then paramType = translateErased(paramType)
         paramType
       }
 

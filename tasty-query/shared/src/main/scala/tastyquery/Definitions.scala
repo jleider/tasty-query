@@ -567,7 +567,8 @@ final class Definitions private[tastyquery] (
           case resultType: Type =>
             throw InvalidProgramStructureException(s"Invalid PolyFunction type ${mt.showBasic}")
       case mt: MethodType =>
-        FunctionNClass(mt.paramNames.size)
+        // Like dotc, erased parameters do not count
+        FunctionNClass(mt.paramTypes.count(!MethodType.isErasedParamType(_)))
     end functionClassOf
   end PolyFunctionType
 
